@@ -109,10 +109,15 @@ jobs:
             -e SECURITY__INTERNAL_TOKEN=ci-internal-token-at-least-32-characters \
             -e LOGGING__LEVEL=error \
             -p 4600:4600 ts-server-starter:ci
+          ok=0
           for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4600/api/v1/livez; then echo " alive"; break; fi
+            if curl -fsS http://127.0.0.1:4600/api/v1/livez; then echo " alive"; ok=1; break; fi
             sleep 1
           done
-          curl -fsS http://127.0.0.1:4600/api/v1/livez
-          docker logs smoke | tail -20
+          # 无论成败都先打印容器状态与日志：烟测挂了却不给日志，等于让人盲猜
+          echo "=== container state ==="
+          docker inspect -f 'status={{.State.Status}} exit={{.State.ExitCode}}' smoke || true
+          echo "=== container logs ==="
+          docker logs smoke 2>&1 | tail -40 || true
           docker rm -f smoke
+          if [ "$ok" != "1" ]; then echo "smoke failed: container did not become live"; exit 1; fi
