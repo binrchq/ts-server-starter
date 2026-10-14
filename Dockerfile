@@ -28,9 +28,11 @@ ENV NODE_ENV=production \
 RUN corepack enable && corepack prepare pnpm@9.15.9 --activate
 
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+# pnpm store 挂的是 buildkit cache mount，本来就不会进镜像层，
+# 不要在这里 rm 它：mountpoint 在同一个 RUN 里删不掉，会报 “Directory not empty” 让构建失败。
 RUN --mount=type=cache,id=pnpm-store,target=/root/.local/share/pnpm/store \
     pnpm install --frozen-lockfile --prod \
- && rm -rf /root/.cache /root/.local/share/pnpm/store
+ && rm -rf /root/.cache
 
 COPY --from=build /app/dist ./dist
 COPY migrations ./migrations
