@@ -216,7 +216,7 @@ export function defaultConfig(): Config {
     },
     server: {
       host: '0.0.0.0',
-      port: 3000,
+      port: 4600,
       mode: 'debug',
       readTimeoutMs: 30_000,
       writeTimeoutMs: 30_000,

@@ -84,6 +84,20 @@ describe('部署与示例文件不能与配置 schema 脱节', () => {
     }
   });
 
+  it('config.yaml 的多端口与 Dockerfile / compose 的约定一致（4600-4604）', () => {
+    const doc = parseYaml(read('src/config/config.yaml')) as { server: Record<string, number> };
+    expect(doc.server.port).toBe(4600);
+    expect(doc.server.admin_port).toBe(4601);
+    expect(doc.server.internal_port).toBe(4602);
+    expect(doc.server.openapi_port).toBe(4603);
+    expect(doc.server.metrics_port).toBe(4604);
+
+    // 部署把宿主机 4600/4604 映射到容器同号端口。容器里若实际监听 3000，
+    // 表现是「容器 running 但探针 connection reset」——只有真起一次才会暴露。
+    expect(read('deploy/docker-compose.prod.yml')).toContain('127.0.0.1:4600:4600');
+    expect(read('Dockerfile')).toContain('EXPOSE 4600 4601 4602 4603 4604');
+  });
+
   it('包管理器注入的变量不算配置（否则每次 pnpm serve 都吐一条假 WARN）', () => {
     const env = {
       npm_package_name: 'ts-server-starter',

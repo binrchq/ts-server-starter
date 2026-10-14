@@ -1,7 +1,7 @@
 /**
  * 结构化日志（zerolog 等价实现，零依赖）
  *
- *   logger.info('server listening', { port: 3000 })
+ *   logger.info('server listening', { port: 4600 })
  *   logger.error(err, 'generation failed', { taskId })
  *   const log = logger.component('http-outer')
  */

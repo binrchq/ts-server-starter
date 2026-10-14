@@ -12,15 +12,15 @@ app:
 
 server:
   host: 0.0.0.0
-  port: 3000
+  port: 4600
   mode: debug
   read_timeout_ms: 30000
   write_timeout_ms: 30000
   # 0 表示不启用该端口
-  admin_port: 3100
-  internal_port: 3200
-  openapi_port: 3300
-  metrics_port: 3400
+  admin_port: 4601
+  internal_port: 4602
+  openapi_port: 4603
+  metrics_port: 4604
   metrics_host: 0.0.0.0
   # 生产环境若在 Nginx/ALB 之后，改成 1（只信任一层代理）；
   # 直接写 true 会被 express-rate-limit 视为不安全配置。
