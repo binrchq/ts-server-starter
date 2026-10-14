@@ -1,0 +1,3 @@
+DROP INDEX IF EXISTS idx_tasks_owner_status;
+DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS users;

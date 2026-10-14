@@ -1,0 +1,172 @@
+# 生产覆盖文件：与仓库根的 docker-compose.yml 叠加使用。
+#
+#   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml up -d
+#
+# 与开发版的差别，以及每一条的理由：
+#
+#   1. 端口只绑 127.0.0.1 —— 公网暴露交给前置 LB / Ingress。
+#      应用自己不监听 0.0.0.0，就不可能因为"忘了配防火墙"被直连。
+#   2. 只开 outer + metrics（+ 必要的 openapi）。admin / inner 默认**关掉**，
+#      需要时再按注释打开：多开一个端口就是多一份面。
+#   3. 资源限额 + 只读根文件系统 + tmpfs —— 容器被拿下后也难落地后门。
+#   4. 日志轮转，避免磁盘被 JSON 日志写满（日志写满是生产最蠢的故障）。
+#   5. 迁移默认不在启动时跑：多副本同时跑迁移会互相踩。见 RUN_MIGRATIONS 的注释。
+#
+# 必需的变量（不要写在文件里，用 CI/CD 的 secret 注入）：
+#   SESSION_SECRET INTERNAL_TOKEN DATABASE_PASSWORD
+#   DATABASE_URL REDIS_URL ALLOWED_ORIGINS
+#   IMAGE_TAG（镜像 tag，例如 git sha）
+
+name: ts-server-starter-prod
+
+services:
+  app:
+    image: ${IMAGE_TAG:?set IMAGE_TAG to the deployed image tag}
+    build:
+      context: ..
+      target: runtime
+    restart: unless-stopped
+    init: true
+    read_only: true
+    # 只读根文件系统下必须给需要写的目录挂 tmpfs：
+    # /tmp 给运行时临时文件，/app/logs 给可能存在的文件日志输出
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/logs:size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      ENVIRONMENT: prod
+      NODE_ENV: production
+      LOGGING__FORMAT: json
+      LOGGING__LEVEL: info
+      # 生产必须显式配置来源；留空会被 fail-closed 地全部拒绝
+      SECURITY__ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:?set ALLOWED_ORIGINS}
+      SECURITY__ENABLE_HSTS: 'true'
+      # 前面的 LB 终止 TLS 时打开，否则限流会按 LB 的 IP 统计（所有人共用一个桶）。
+      # 路径是 server.trust_proxy —— 写成 SECURITY__TRUST_PROXY 会被 loader 忽略并只打一条 WARN。
+      SERVER__TRUST_PROXY: '1'
+      # 迁移交给独立的 job（见下方 migrate 服务），副本启动不跑
+      RUN_MIGRATIONS: 'false'
+      SECURITY__SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET (>=32 chars)}
+      SECURITY__INTERNAL_TOKEN: ${INTERNAL_TOKEN:?set INTERNAL_TOKEN (>=32 chars)}
+      DATABASE__HOST: postgres
+      DATABASE__PORT: '5432'
+      DATABASE__NAME: ${DATABASE_NAME:-ts_starter}
+      DATABASE__USERNAME: ${DATABASE_USER:-postgres}
+      DATABASE__PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD}
+      DATABASE__SSL_MODE: require
+      REDIS__HOST: redis
+      REDIS__PORT: '6379'
+      # 只有管理端口和内部端口都关掉时，DEV_AUTH_BYPASS 才轮不到被误开
+      DEV_AUTH_BYPASS: '0'
+    ports:
+      # 公网层：只绑回环，由 LB 转发进来
+      - '127.0.0.1:4600:4600'
+      # 指标：只给监控系统抓。**不要**暴露到公网，它不带认证
+      - '127.0.0.1:4604:4604'
+      # admin / inner / openapi 默认不开。需要时按需打开，并确认网络策略
+      # - '127.0.0.1:4601:4601'
+      # - '127.0.0.1:4602:4602'
+      # - '127.0.0.1:4603:4603'
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 1g
+        reservations:
+          cpus: '0.25'
+          memory: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '5'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:4600/api/v1/livez').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      # 启动慢一点总比被反复重启好（重启风暴会把依赖也带崩）
+      start_period: 20s
+      # 存活探测故意不查数据库：数据库抖动不该触发容器重启
+
+  # 独立迁移 job：一次性执行，不要跟副本绑定
+  #
+  #   docker compose -f docker-compose.yml -f deploy/docker-compose.prod.yml run --rm migrate
+  #
+  # 上线顺序：先跑 migrate 成功，再滚动更新 app。
+  migrate:
+    image: ${IMAGE_TAG:?set IMAGE_TAG to the deployed image tag}
+    profiles: ['tools']
+    restart: 'no'
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      ENVIRONMENT: prod
+      NODE_ENV: production
+      DATABASE__HOST: postgres
+      DATABASE__PORT: '5432'
+      DATABASE__NAME: ${DATABASE_NAME:-ts_starter}
+      DATABASE__USERNAME: ${DATABASE_USER:-postgres}
+      DATABASE__PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD}
+      DATABASE__SSL_MODE: require
+      SECURITY__SESSION_SECRET: ${SESSION_SECRET:?set SESSION_SECRET (>=32 chars)}
+      SECURITY__INTERNAL_TOKEN: ${INTERNAL_TOKEN:?set INTERNAL_TOKEN (>=32 chars)}
+    command: ['node', 'dist/main.js', 'migrate', 'up', '--config', './dist/config/config.yaml']
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    ports: []
+    environment:
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?set DATABASE_PASSWORD}
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+    logging:
+      driver: json-file
+      options:
+        max-size: 20m
+        max-file: '5'
+
+  redis:
+    ports: []
+    command:
+      - redis-server
+      - --appendonly
+      - 'yes'
+      # 审计/限流这类数据丢了不该让内存被吃满：
+      # 到上限时返回错误而不是静默淘汰（静默淘汰会让限流器失效）
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - noeviction
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: '3'
+
+volumes:
+  postgres-data:
+  redis-data:

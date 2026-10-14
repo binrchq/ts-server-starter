@@ -1,0 +1,118 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+# 同一分支的新推送取消旧的运行，避免排队浪费额度
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: 'true'
+  NODE_VERSION: '22.22.0'
+
+jobs:
+  verify:
+    name: 类型检查 / Lint / 测试
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: ts_starter_ci
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/ts_starter_ci
+      REDIS_URL: redis://127.0.0.1:6379
+      SECURITY__SESSION_SECRET: ci-session-secret-at-least-32-characters
+      SECURITY__INTERNAL_TOKEN: ci-internal-token-at-least-32-characters
+      LOGGING__LEVEL: warn
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.15.9
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: pnpm
+
+      - name: 安装依赖
+        run: pnpm install --frozen-lockfile
+
+      - name: 类型检查
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: 格式检查
+        run: pnpm format:check
+
+      - name: 构建
+        run: pnpm build
+
+      - name: 迁移（对真实 Postgres 跑一遍，验证 SQL 语法与顺序）
+        run: |
+          node dist/main.js migrate status
+          node dist/main.js migrate up
+          node dist/main.js migrate status
+
+      - name: 测试
+        run: pnpm test
+
+      - name: 依赖漏洞审计（高危即失败）
+        run: pnpm audit --audit-level=high
+        continue-on-error: true
+
+  docker:
+    name: 镜像可构建
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: 构建镜像
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ts-server-starter:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: 冒烟：容器能起来并响应存活探针
+        run: |
+          docker run -d --name smoke \
+            -e SECURITY__SESSION_SECRET=ci-session-secret-at-least-32-characters \
+            -e SECURITY__INTERNAL_TOKEN=ci-internal-token-at-least-32-characters \
+            -e LOGGING__LEVEL=error \
+            -p 4600:4600 ts-server-starter:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4600/api/v1/livez; then echo " alive"; break; fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:4600/api/v1/livez
+          docker logs smoke | tail -20
+          docker rm -f smoke

@@ -1,0 +1,142 @@
+# 配置样例。字段名用 snake_case（与 Go 版一致），loader 会自动转成 camelCase。
+# 优先级：内置默认值 < 本文件 < 环境变量 < CLI 参数
+# 环境变量用双下划线表示层级：DATABASE__HOST=db  ->  database.host
+
+environment: dev
+
+app:
+  name: ts-server-starter
+  version: v0.1.0
+  node_id: node-001
+  description: TypeScript microservice starter template
+
+server:
+  host: 0.0.0.0
+  port: 3000
+  mode: debug
+  read_timeout_ms: 30000
+  write_timeout_ms: 30000
+  # 0 表示不启用该端口
+  admin_port: 3100
+  internal_port: 3200
+  openapi_port: 3300
+  metrics_port: 3400
+  metrics_host: 0.0.0.0
+  # 生产环境若在 Nginx/ALB 之后，改成 1（只信任一层代理）；
+  # 直接写 true 会被 express-rate-limit 视为不安全配置。
+  trust_proxy: false
+  body_limit: 1mb
+
+database:
+  driver: postgres
+  host: localhost
+  port: 5432
+  name: starter_db
+  username: postgres
+  password: ""
+  ssl_mode: disable
+  schema: public
+  max_idle_conns: 10
+  max_open_conns: 100
+  conn_max_lifetime_ms: 3600000
+  conn_max_idle_time_ms: 600000
+  url: ""
+  # 动态分表守护：到期末前 prepare_advance_ms 开始建下期表
+  sharding:
+    enabled: false
+    check_interval_ms: 21600000
+    prepare_advance_ms: 259200000   # 3 天
+    format: "YYYYMM"               # YYYYMM | YYYYMMDD | YYYY_MM | YYYY
+    check_exists: true
+
+redis:
+  host: localhost
+  port: 6379
+  password: ""
+  database: 0
+  pool_size: 10
+  min_idle_conns: 5
+  idle_timeout_ms: 300000
+  url: ""
+
+cache:
+  driver: redis        # redis | memory
+  database: 1
+  size: 1000
+  default_ttl_ms: 300000
+  key_prefix: ""
+
+mq:
+  driver: memory       # memory | redis | rabbitmq | kafka
+  topic_prefix: ""
+  brokers:
+    - localhost:9092
+  rabbit_url: ""
+
+state:
+  enabled: false
+  driver: memory       # memory | redis | etcd
+  lock_ttl_ms: 30000
+  # 该前缀会加在**所有** state key 之前（不限于锁），便于多套环境共用一个实例
+  key_prefix: "state:"
+  # driver=etcd 时必填，例如 ["http://127.0.0.1:2379"]
+  endpoints: []
+
+verification:
+  enabled: true
+  length: 6            # 验证码位数（4-8）
+  ttl_ms: 300000
+  max_attempts: 5      # 单个验证码允许的失败次数
+  cooldown_ms: 60000   # 两次发送的最小间隔
+  daily_limit: 10      # 同一 target 每日发送上限
+  expose_in_logs: false  # 仅 dev/test；prod 开启会启动失败
+
+logging:
+  level: debug
+  format: json         # json | text
+  output: stdout       # stdout | file
+  file_path: ./logs/app.log
+  max_size: 100
+  max_backups: 3
+  max_age: 7
+  compress: true
+
+security:
+  enforce_secrets: true
+  # 生产环境必须提供（>=32 字符），可用 SECURITY__SESSION_SECRET 覆盖
+  session_secret: ""
+  # 内网服务间密钥；留空则 inner 端口全部返回 503（fail-closed 优于 fail-open）
+  internal_token: ""
+  # 只有前置 LB 已终止 TLS 时才开启
+  enable_hsts: false
+  allowed_origins: []
+  rate_limit:
+    enabled: true
+    window_ms: 60000
+    max: 300
+    auth_max: 10
+  audit_log: true
+  # 审计落库：有界队列 + 批量写入，避免数据库抖动时拖垮请求
+  audit_queue_capacity: 1000
+  audit_batch_size: 20
+  audit_flush_interval_ms: 2000
+  redact_keys:
+    - password
+    - passwd
+    - secret
+    - token
+    - authorization
+    - cookie
+    - set-cookie
+    - apikey
+    - api_key
+    - accesskey
+    - privatekey
+    - credential
+    - sessionid
+    - session
+    - signature
+    - otp
+    - pin
+    - cardnumber
+    - cvv

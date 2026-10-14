@@ -1,0 +1,86 @@
+{
+  "name": "ts-server-starter",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Idiomatic TypeScript backend starter: multi-port HTTP, layered routers, runtime DI, service manager, timer wheel, pluggable infra drivers.",
+  "engines": {
+    "node": ">=20.11"
+  },
+  "main": "./dist/main.js",
+  "bin": {
+    "ts-server": "./dist/main.js"
+  },
+  "files": [
+    "dist",
+    "migrations",
+    "README.md",
+    "SECURITY.md"
+  ],
+  "scripts": {
+    "dev": "tsx watch src/main.ts serve --config ./src/config/config.yaml",
+    "build": "tsc -p tsconfig.build.json && node scripts/copy-assets.mjs",
+    "start": "node dist/main.js serve --config ./dist/config/config.yaml",
+    "serve": "tsx src/main.ts serve",
+    "migrate": "tsx src/main.ts migrate",
+    "routes": "tsx src/main.ts routes",
+    "version": "tsx src/main.ts version",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc -p tsconfig.test.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
+    "smoke": "node scripts/smoke.mjs",
+    "audit:deps": "pnpm audit --audit-level=high",
+    "verify": "pnpm typecheck && pnpm lint && pnpm test",
+    "info": "tsx src/main.ts version --config ./src/config/config.yaml"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "compression": "^1.7.5",
+    "cookie-parser": "^1.4.7",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "ioredis": "^5.4.2",
+    "pg": "^8.13.1",
+    "uuid": "^11.0.5",
+    "ws": "^8.18.0",
+    "yaml": "^2.7.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.5",
+    "@types/compression": "^1.7.5",
+    "@types/cookie-parser": "^1.4.8",
+    "@types/cors": "^2.8.17",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.10.5",
+    "@types/pg": "^8.11.10",
+    "@types/uuid": "^10.0.0",
+    "@types/ws": "^8.5.13",
+    "@vitest/coverage-v8": "^2.1.9",
+    "eslint": "^9.17.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.71.2",
+    "vitest": "^2.1.8"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^13.0.3",
+    "etcd3": "^1.1.2",
+    "mongodb": "^7.7.0",
+    "mysql2": "^3.24.6"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/binrchq/ts-server-starter.git"
+  }
+}
