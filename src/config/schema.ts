@@ -14,8 +14,28 @@ import { z } from 'zod';
 const logLevel = z.enum(['debug', 'info', 'warn', 'error', 'silent']);
 const port = z.number().int().min(0).max(65535);
 
+/**
+ * NODE_ENV 的行业习惯写法与本模板的枚举不一致：
+ * 容器/CI 普遍设 `NODE_ENV=production`，而内部枚举是 `prod`。
+ * 不做归一化的话，Dockerfile 里的 `ENV NODE_ENV=production` 会让进程
+ * 在 zod 校验阶段直接崩掉 —— 构建成功、容器起不来，只在烟测里才暴露。
+ */
+const ENVIRONMENT_ALIASES: Record<string, 'dev' | 'test' | 'prod'> = {
+  dev: 'dev',
+  development: 'dev',
+  test: 'test',
+  testing: 'test',
+  prod: 'prod',
+  production: 'prod',
+};
+
+function normalizeEnvironment(value: unknown): unknown {
+  if (typeof value !== 'string') return value;
+  return ENVIRONMENT_ALIASES[value.trim().toLowerCase()] ?? value;
+}
+
 export const configSchema = z.object({
-  environment: z.enum(['dev', 'test', 'prod']).default('dev'),
+  environment: z.preprocess(normalizeEnvironment, z.enum(['dev', 'test', 'prod']).default('dev')),
 
   app: z.object({
     name: z.string().min(1),

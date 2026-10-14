@@ -60,6 +60,14 @@ describe('config loader', () => {
     expect(config.database.url).toBe('postgres://u:p@h:5432/d');
   });
 
+  it('NODE_ENV 的常见写法被归一化（production→prod，development→dev）', () => {
+    // 容器里普遍是 NODE_ENV=production，与内部枚举 prod 不一致；不归一化就会启动即崩
+    expect(loadConfig({ env: { NODE_ENV: 'production' } }).environment).toBe('prod');
+    expect(loadConfig({ env: { NODE_ENV: 'development' } }).environment).toBe('dev');
+    expect(loadConfig({ env: { ENVIRONMENT: 'prod' } }).environment).toBe('prod');
+    expect(loadConfig({ env: { NODE_ENV: 'test' } }).environment).toBe('test');
+  });
+
   it('DSN 优先使用整串 url，否则按分项拼接', () => {
     const withUrl = loadConfig({ env: { DATABASE_URL: 'postgres://u:p@h:5432/d' } });
     expect(databaseDsn(withUrl.database)).toBe('postgres://u:p@h:5432/d');
